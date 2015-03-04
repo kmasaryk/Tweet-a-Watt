@@ -1,15 +1,12 @@
 #!/usr/bin/env python
+
 import serial, time, datetime, sys
 from xbee import xbee
-import twitter
 import sensorhistory
 
-# use App Engine? or log file? comment out next line if appengine
-LOGFILENAME = "powerdatalog.csv"   # where we will store our flatfile data
+# where we will store our flatfile data
+LOGFILENAME = "powerdatalog.csv"
 
-if not LOGFILENAME:
-    import appengineauth
-    
 # for graphing stuff
 GRAPHIT = False         # whether we will graph data
 if GRAPHIT:
@@ -19,24 +16,35 @@ if GRAPHIT:
     matplotlib.use('WXAgg') # do this before importing pylab
     from pylab import *
 
+# the com/serial port the XBee is connected to
+SERIALPORT = "/dev/ttyAMA0"
+BAUDRATE = 9600
 
-SERIALPORT = "COM4"    # the com/serial port the XBee is connected to
-BAUDRATE = 9600      # the baud rate we talk to the xbee
-CURRENTSENSE = 4       # which XBee ADC has current draw data
-VOLTSENSE = 0          # which XBee ADC has mains voltage data
-MAINSVPP = 170 * 2     # +-170V is what 120Vrms ends up being (= 120*2sqrt(2))
+# which XBee ADC has current draw data
+CURRENTSENSE = 4
+# which XBee ADC has mains voltage data
+VOLTSENSE = 0
+# +-170V is what 120Vrms ends up being (= 120*2sqrt(2))
+MAINSVPP = 170 * 2
 vrefcalibration = [492,  # Calibration for sensor #0
                    498,  # Calibration for sensor #1
                    489,  # Calibration for sensor #2
                    492,  # Calibration for sensor #3
                    501,  # Calibration for sensor #4
                    493]  # etc... approx ((2.4v * (10Ko/14.7Ko)) / 3
-CURRENTNORM = 15.5  # conversion to amperes from ADC
-NUMWATTDATASAMPLES = 1800 # how many samples to watch in the plot window, 1 hr @ 2s samples
+# conversion to amperes from ADC
+CURRENTNORM = 15.5
+# how many samples to watch in the plot window, 1 hr @ 2s samples
+NUMWATTDATASAMPLES = 1800
 
-# Twitter username & password
+# Twitter stuff
+TWITTER = False
+if TWITTER:
+    import twitter
 twitterusername = "username"
 twitterpassword = "password"
+# Simple timer for twitter makes sure we don't twitter > 1/day
+twittertimer = 0
 
 def TwitterIt(u, p, message):
     api = twitter.Api(username=u, password=p)
@@ -45,15 +53,39 @@ def TwitterIt(u, p, message):
         status = api.PostUpdate(message)
         print "%s just posted: %s" % (status.user.name, status.text)
     except UnicodeDecodeError:
-        print "Your message could not be encoded.  Perhaps it contains non-ASCII characters? "
-        print "Try explicitly specifying the encoding with the  it with the --encoding flag"
+        print ("Your message could not be encoded.  Perhaps it " +
+               "contains non-ASCII characters? ")
+        print ("Try explicitly specifying the encoding with the  it " +
+               "with the --encoding flag")
     except:
-        print "Couldn't connect, check network, username and password!"
+        print "Couldn't connect to Twitter!"
 
+# This might be missing some args, I just wanted to get it out of
+# the main loop. Might need a global declaration or two also.
+def check_twitter():
+    # We're going to twitter at midnight, 8am and 4pm
+    # Determine the hour of the day (ie 6:42 -> '6')
+    currhour = datetime.datetime.now().hour
+    # twitter every 8 hours
+    if (((time.time() - twittertimer) >= 3660.0) and
+        (currhour % 8 == 0)):
+        print "twittertime!"
+        twittertimer = time.time();
 
-# open up the FTDI serial port to get data transmitted to xbee
-ser = serial.Serial(SERIALPORT, BAUDRATE)
-ser.open()
+        # sum up all the sensors' data
+        wattsused = 0
+        whused = 0
+        for history in sensorhistories.sensorhistories:
+            wattsused += history.avgwattover5min()
+            whused += history.dayswatthr
+                
+        message = ("Currently using "+str(int(wattsused))+" Watts,"+
+                   str(int(whused))+" Wh today so far #tweetawatt")
+
+        # write something ourselves
+        if message:
+            print message
+            TwitterIt(twitterusername, twitterpassword, message)
 
 # open our datalogging file
 logfile = None
@@ -70,6 +102,9 @@ if (sys.argv and len(sys.argv) > 1):
     if sys.argv[1] == "-d":
         DEBUG = True
 #print DEBUG
+
+# open up the serial port to get data transmitted to xbee
+ser = serial.Serial(SERIALPORT, BAUDRATE)
 
 if GRAPHIT: 
     # Create an animated graph
@@ -103,9 +138,6 @@ if GRAPHIT:
     # and a legend for both of them
     #legend((voltagewatchline, ampwatchline), ('volts', 'amps'))
 
-
-# a simple timer for twitter, makes sure we don't twitter more than once a day
-twittertimer = 0
 
 sensorhistories = sensorhistory.SensorHistories(logfile)
 print sensorhistories
@@ -234,7 +266,9 @@ def update_graph(idleevent):
         ):
         # Print out debug data, Wh used in last 5 minutes
         avgwattsused = sensorhistory.avgwattover5min()
-        print time.strftime("%Y %m %d, %H:%M")+", "+str(sensorhistory.sensornum)+", "+str(sensorhistory.avgwattover5min())+"\n"
+        print (time.strftime("%Y %m %d, %H:%M")+","+
+               str(sensorhistory.sensornum)+", "+
+               str(sensorhistory.avgwattover5min())+"\n"
                
         # Lets log it! Seek to the end of our log file
         if logfile:
@@ -244,37 +278,11 @@ def update_graph(idleevent):
                           str(sensorhistory.avgwattover5min())+"\n")
             logfile.flush()
             
-        # Or, send it to the app engine
-        if not LOGFILENAME:
-            appengineauth.sendreport(xb.address_16, avgwattsused)
-        
-        
         # Reset our 5 minute timer
         sensorhistory.reset5mintimer()
         
-
-    # We're going to twitter at midnight, 8am and 4pm
-    # Determine the hour of the day (ie 6:42 -> '6')
-    currhour = datetime.datetime.now().hour
-    # twitter every 8 hours
-    if (((time.time() - twittertimer) >= 3660.0) and (currhour % 8 == 0)):
-        print "twittertime!"
-        twittertimer = time.time();
-        if not LOGFILENAME:
-            message = appengineauth.gettweetreport()
-        else:
-            # sum up all the sensors' data
-            wattsused = 0
-            whused = 0
-            for history in sensorhistories.sensorhistories:
-                wattsused += history.avgwattover5min()
-                whused += history.dayswatthr
-                
-            message = "Currently using "+str(int(wattsused))+" Watts, "+str(int(whused))+" Wh today so far #tweetawatt"
-            # write something ourselves
-        if message:
-            print message
-            TwitterIt(twitterusername, twitterpassword, message)
+    if TWITTER:
+        check_twitter()
 
     if GRAPHIT:
         # Redraw our pretty picture
