@@ -9,22 +9,13 @@ import argparse
 DEBUG = False
 
 # Logging interval in seconds
-LOG_INTVL = 120
+LOG_INTVL = 30
 
 # where we will store our flatfile data
 LOGFILENAME = "powerdatalog.csv"
 
 # Sensor calibration file
 CALFILE = "calibration"
-
-# for graphing stuff
-GRAPHIT = True
-if GRAPHIT:
-    import wx
-    import numpy as np
-    import matplotlib
-    matplotlib.use('WXAgg')
-    from pylab import *
 
 # the com/serial port the XBee is connected to
 #SERIALPORT = "/dev/ttyAMA0"
@@ -225,30 +216,17 @@ def update_graph(idleevent):
         avgwatt += abs(wattdata[i])
     avgwatt /= 17.0
 
-    # Print out our most recent measurements
-    print str(xb.address_16)+"\tCurrent draw, in amperes: "+str(avgamp)
-    print "\tWatt draw, in VA: "+str(avgwatt)
+    #print str(xb.address_16)+"\tCurrent draw, in amperes: "+str(avgamp)
+    print("{}\tCurrent draw, in amperes: {}" .format(xb.address_16, 
+                                                     avgamp))
+    #print "\tWatt draw, in VA: "+str(avgwatt)
+    print("\tWatt draw, in VA: {}" .format(avgwatt))
 
     if (avgamp > 13):
         # hmm, bad data
         return
 
-    if GRAPHIT:
-        # Add the current watt usage to our graph history
-        avgwattdata[avgwattdataidx] = avgwatt
-        avgwattdataidx += 1
-        if (avgwattdataidx >= len(avgwattdata)):
-            # If we're running out of space, shift the first 10% out
-            tenpercent = int(len(avgwattdata)*0.1)
-            for i in range(len(avgwattdata) - tenpercent):
-                avgwattdata[i] = avgwattdata[i+tenpercent]
-            for i in range(len(avgwattdata) - tenpercent, len(avgwattdata)):
-                avgwattdata[i] = 0
-            avgwattdataidx = len(avgwattdata) - tenpercent
-
-    # Retreive the history for this sensor
     shist = shists.find(xb.address_16)
-    #print shist
     
     # Add up the delta-watthr used since last reading.
     # Figure out how many watt hours were used since last reading.
@@ -259,49 +237,22 @@ def update_graph(idleevent):
           .format(elapsedseconds, dwatthr))
     shist.add_watthr(dwatthr)
     
-    # Determine the minute of the hour (ie 6:42 -> '42')
-    #currminute = (int(time.time())/60) % 10
-    # Figure out if its been five minutes since our last save
-    #if (((time.time() - shist.timer) >= 60.0)
-    #    and (currminute % 5 == 0)
-    #    ):
     if ((time.time() - shist.timer) >= LOG_INTVL):
         avgwattsused = shist.avg_watthr()
         now = time.strftime("%Y %m %d, %H:%M")
         print("{}, {}, {}\n" 
               .format(now, shist.sensornum, shist.avg_watthr()))
-        #print (time.strftime("%Y %m %d, %H:%M")+","+
-        #       str(shist.sensornum)+", "+
-        #       str(shist.avg_watthr())+"\n")
                
-        # Lets log it! Seek to the end of our log file
         if logfile:
             logfile.seek(0, 2)
             logfile.write("{}, {}, {}\n" .format(now, shist.sensornum,
                                                  shist.avg_watthr()))
-            #logfile.write(time.strftime("%Y %m %d, %H:%M")+", "+
-            #              str(shist.sensornum)+", "+
-            #              str(shist.avg_watthr())+"\n")
             logfile.flush()
             
         shist.reset_timer()
         
     if TWITTER:
         check_twitter()
-
-    if GRAPHIT:
-        # Redraw our pretty picture
-        fig.canvas.draw_idle()
-        # Update with latest data
-        wattusageline.set_ydata(avgwattdata)
-        voltagewatchline.set_ydata(voltagedata)
-        ampwatchline.set_ydata(ampdata)
-        # Update our graphing range so that we always see all the data
-        maxamp = max(ampdata)
-        minamp = min(ampdata)
-        maxamp = max(maxamp, -minamp)
-        mainsampwatcher.set_ylim(maxamp * -1.2, maxamp * 1.2)
-        wattusage.set_ylim(0, max(avgwattdata) * 1.2)
 
 
 # open our datalogging file
@@ -332,53 +283,10 @@ if args.DEBUG:
 if args.sensor_to_cal != None:
     calibrate(ser, int(args.sensor_to_cal))
 
-if GRAPHIT: 
-    # Create an animated graph
-    fig = plt.figure()
-    # with three subplots: line voltage/current, watts and watthr
-    wattusage = fig.add_subplot(211)
-    mainswatch = fig.add_subplot(212)
-    
-    # data that we keep track of, the average watt usage as sent in
-    # zero out all the data to start
-    avgwattdata = [0] * NUMWATTDATASAMPLES
-    # which point in the array we're entering new data
-    avgwattdataidx = 0
-    
-    # The watt subplot
-    watt_t = np.arange(0, len(avgwattdata), 1)
-    wattusageline, = wattusage.plot(watt_t, avgwattdata)
-    wattusage.set_ylabel('Watts')
-    wattusage.set_ylim(0, 500)
-    
-    # the mains voltage and current level subplot
-    mains_t = np.arange(0, 18, 1)
-    voltagewatchline, = mainswatch.plot(mains_t, [0] * 18,
-                                        color='blue')
-    mainswatch.set_ylabel('Volts (blue)')
-    mainswatch.set_xlabel('Sample #')
-    mainswatch.set_ylim(-200, 200)
-    # make a second axies for amp data
-    mainsampwatcher = mainswatch.twinx()
-    ampwatchline, = mainsampwatcher.plot(mains_t,
-                                         [0] * 18, color='green')
-    mainsampwatcher.set_ylabel('Amps (green)')
-    mainsampwatcher.set_ylim(-15, 15)
-    
-    # and a legend for both of them
-    #legend((voltagewatchline, ampwatchline), ('volts', 'amps'))
-
-
 shists = sensorhistory.SensorHistories(logfile)
 print shists
 
 
-if GRAPHIT:
-    timer = wx.Timer(wx.GetApp(), -1)
-    timer.Start(500)        # run an in every 'n' milli-seconds
-    wx.GetApp().Bind(wx.EVT_TIMER, update_graph)
-    plt.show()
-else:
-    while True:
-        update_graph(None)
+while True:
+    update_graph(None)
 
