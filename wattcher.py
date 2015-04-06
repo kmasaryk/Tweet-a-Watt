@@ -8,8 +8,8 @@ import argparse
 # Can also be turned on with passing '-d' to script
 DEBUG = False
 
-# Logging interval in minutes
-LOG_IVL = 2
+# Logging interval in seconds
+LOG_INTVL = 120
 
 # where we will store our flatfile data
 LOGFILENAME = "powerdatalog.csv"
@@ -18,7 +18,7 @@ LOGFILENAME = "powerdatalog.csv"
 CALFILE = "calibration"
 
 # for graphing stuff
-GRAPHIT = False
+GRAPHIT = True
 if GRAPHIT:
     import wx
     import numpy as np
@@ -260,23 +260,28 @@ def update_graph(idleevent):
     shist.add_watthr(dwatthr)
     
     # Determine the minute of the hour (ie 6:42 -> '42')
-    currminute = (int(time.time())/60) % 10
+    #currminute = (int(time.time())/60) % 10
     # Figure out if its been five minutes since our last save
-    if (((time.time() - shist.timer) >= 60.0)
-        and (currminute % 5 == 0)
-        ):
-        # Print out debug data, Wh used in last 5 minutes
+    #if (((time.time() - shist.timer) >= 60.0)
+    #    and (currminute % 5 == 0)
+    #    ):
+    if ((time.time() - shist.timer) >= LOG_INTVL):
         avgwattsused = shist.avg_watthr()
-        print (time.strftime("%Y %m %d, %H:%M")+","+
-               str(shist.sensornum)+", "+
-               str(shist.avg_watthr())+"\n")
+        now = time.strftime("%Y %m %d, %H:%M")
+        print("{}, {}, {}\n" 
+              .format(now, shist.sensornum, shist.avg_watthr()))
+        #print (time.strftime("%Y %m %d, %H:%M")+","+
+        #       str(shist.sensornum)+", "+
+        #       str(shist.avg_watthr())+"\n")
                
         # Lets log it! Seek to the end of our log file
         if logfile:
             logfile.seek(0, 2)
-            logfile.write(time.strftime("%Y %m %d, %H:%M")+", "+
-                          str(shist.sensornum)+", "+
-                          str(shist.avg_watthr())+"\n")
+            logfile.write("{}, {}, {}\n" .format(now, shist.sensornum,
+                                                 shist.avg_watthr()))
+            #logfile.write(time.strftime("%Y %m %d, %H:%M")+", "+
+            #              str(shist.sensornum)+", "+
+            #              str(shist.avg_watthr())+"\n")
             logfile.flush()
             
         shist.reset_timer()
