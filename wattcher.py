@@ -12,7 +12,7 @@ DEBUG = False
 LOG_INTVL = 30
 
 # where we will store our flatfile data
-LOGFILENAME = "powerdatalog.csv"
+LOGFILE = "powerdatalog.csv"
 
 # Sensor calibration file
 CALFILE = "calibration"
@@ -31,17 +31,8 @@ VOLTSENSE = 0
 # +-170V is what 120Vrms ends up being (= 120*2sqrt(2))
 MAINSVPP = 170 * 2
 
-# Load sensor calibration data
-cf = open(CALFILE, 'r')
-line = cf.readline()
-vrefcalibration = [int(x) for x in line.split(",")]
-cf.close()
-
 # conversion to amperes from ADC
 CURRENTNORM = 15.5
-
-# how many samples to watch in the plot window, 1 hr @ 2s samples
-NUMWATTDATASAMPLES = 1800
 
 # Twitter stuff
 TWITTER = False
@@ -125,10 +116,18 @@ def calibrate(ser, sensor_num):
     cf.close()
     exit
 
+def log_data(sensor, shist):
+    now = time.strftime("%Y %m %d, %H:%M")
+
+    print("{}, {}, {}\n" .format(now, sensor, shist.avg_watthr()))
+
+    log.seek(0, 2)
+    log.write("{}, {}, {}\n" .format(now, sensor, shist.avg_watthr))
+    log.flush()
+
 # the 'main loop' runs once a second or so.
 # update_graph is a really stupid name for this fx
-def update_graph(idleevent):
-    global avgwattdataidx, shists, twittertimer, DEBUG
+def update_graph(shists):
      
     # grab one packet from the xbee, or timeout
     packet = xbee.find_packet(ser)
@@ -148,15 +147,14 @@ def update_graph(idleevent):
     voltagedata = [-1] * (len(xb.analog_samples) - 1)
     ampdata = [-1] * (len(xb.analog_samples) - 1)
 
-    # grab 1 thru n of the ADC readings, referencing the ADC constants
-    # and store them in nice little arrays
+    # Grab 1 thru n of the ADC readings
     for i in range(len(voltagedata)):
         voltagedata[i] = xb.analog_samples[i+1][VOLTSENSE]
         ampdata[i] = xb.analog_samples[i+1][CURRENTSENSE]
 
     if DEBUG:
-        print "ampdata: "+str(ampdata)
-        print "voltdata: "+str(voltagedata)
+        print("raw ampdata: {}" .format(ampdata))
+        print("raw voltdata: {}" .format(voltagedata))
 
     # get max and min voltage and normalize the curve to '0'
     # to make the graph 'AC coupled' / signed
@@ -191,15 +189,17 @@ def update_graph(idleevent):
         # the CURRENTNORM is our normalizing constant
         # that converts the ADC reading to Amperes
         ampdata[i] /= CURRENTNORM
-
-    #print "Voltage, in volts: ", voltagedata
-    #print "Current, in amps:  ", ampdata
-
+    
     # calculate instant. watts, by multiplying V*I for each sample
     # point
     wattdata = [0] * len(voltagedata)
     for i in range(len(wattdata)):
         wattdata[i] = voltagedata[i] * ampdata[i]
+
+    if DEBUG:
+        print("voltagedata: {}" .format(voltagedata))
+        print("ampdata:  {}" .format(ampdata))
+        print("wattdata: {}" .format(wattdata))
 
     # sum up the current drawn over one 1/60hz cycle
     avgamp = 0
@@ -216,10 +216,8 @@ def update_graph(idleevent):
         avgwatt += abs(wattdata[i])
     avgwatt /= 17.0
 
-    #print str(xb.address_16)+"\tCurrent draw, in amperes: "+str(avgamp)
     print("{}\tCurrent draw, in amperes: {}" .format(xb.address_16, 
                                                      avgamp))
-    #print "\tWatt draw, in VA: "+str(avgwatt)
     print("\tWatt draw, in VA: {}" .format(avgwatt))
 
     if (avgamp > 13):
@@ -236,37 +234,15 @@ def update_graph(idleevent):
     print("\t\tWh used in last {} seconds: {}" 
           .format(elapsedseconds, dwatthr))
     shist.add_watthr(dwatthr)
-    
+
     if ((time.time() - shist.timer) >= LOG_INTVL):
-        avgwattsused = shist.avg_watthr()
-        now = time.strftime("%Y %m %d, %H:%M")
-        print("{}, {}, {}\n" 
-              .format(now, shist.sensornum, shist.avg_watthr()))
-               
-        if logfile:
-            logfile.seek(0, 2)
-            logfile.write("{}, {}, {}\n" .format(now, shist.sensornum,
-                                                 shist.avg_watthr()))
-            logfile.flush()
-            
+        log_data(xb.address_16, shist)
         shist.reset_timer()
         
-    if TWITTER:
-        check_twitter()
 
-
-# open our datalogging file
-logfile = None
-try:
-    logfile = open(LOGFILENAME, 'r+')
-except IOError:
-    # didn't exist yet
-    logfile = open(LOGFILENAME, 'w+')
-    logfile.write("#Date, time, sensornum, avgWatts\n");
-    logfile.flush()
-            
-# open up the serial port to get data transmitted to xbee
-ser = serial.Serial(SERIALPORT, BAUDRATE)
+#------#
+# main #
+#------#
 
 # Process command line args
 parser = argparse.ArgumentParser()
@@ -280,13 +256,32 @@ args = parser.parse_args()
 if args.DEBUG:
     DEBUG = True
 
+# open up the serial port to get data transmitted to xbee
+ser = serial.Serial(SERIALPORT, BAUDRATE)
+
+# Load sensor calibration data
+cf = open(CALFILE, 'r')
+line = cf.readline()
+vrefcalibration = [int(x) for x in line.split(",")]
+cf.close()
+
 if args.sensor_to_cal != None:
     calibrate(ser, int(args.sensor_to_cal))
 
-shists = sensorhistory.SensorHistories(logfile)
+# Open and init datalogging file
+try:
+    log = open(LOGFILE, 'r+')
+except IOError:
+    # didn't exist yet
+    log = open(LOGFILE, 'w+')
+    log.write("#Date, time, sensornum, avgWatts\n");
+    log.flush()
+            
+shists = sensorhistory.SensorHistories(log)
 print shists
 
-
 while True:
-    update_graph(None)
+    update_graph(shists)
 
+    if TWITTER:
+        check_twitter()
