@@ -1,36 +1,52 @@
 # Tweet-a-Watt
 This is fork reflects my own changes to the Tweet-a-Watt project.
 
-I've cleaned up a lot of the original code to make it more legible and follow Python (and normal coding)
-practices. Changes have only been to wattcher.py and sensorhistory.py. xbee.py and twitter.py are untouched.
+I've cleaned up a lot of the original code to make it more legible
+and follow Python (and normal coding) practices. Changes have only
+been to wattcher.py and sensorhistory.py. xbee.py and twitter.py are
+untouched.
+
 Twitter code was organized better in wattcher.py also but is untested.
 
-DB functionality has also been added so that you can log data from any sensor to a MySQL DB. The power.sql file
-contains all the SQL necessary to create the tables (the DB must already exist). Since it's just using
-mysql.connector module which is part of the Python standard library, nothing extra is required. To use this 
-functionality:
+DB functionality has also been added so that you can log data from
+any sensor to a MySQL DB. The power.sql file contains all the SQL
+necessary to create the tables (the DB must already exist). Since
+it's just using mysql.connector module which is part of the Python
+standard library, nothing extra is required.
+
+To use this functionality:
 
 1. Create a MySQL database.
-2. Create a user in MySQL (or use an existing one) and grant them rights to the new DB.
+
+2. Create a user in MySQL (or use an existing one) and grant them
+rights to the new DB.
+
 3. Import the power.sql file. For example:
 
 mysql> source < power.sql
 
 4. Create at least one device in the devices table. For example:
 
-mysql> INSERT INTO devices (name, description) VALUES ('stereo', 'Stereo in home theater room.');
+mysql> INSERT INTO devices (name, description) VALUES ('stereo',
+       'Stereo in home theater room.');
 
 5. Edit the DB_XX vars in wattcher.py, e.g. DB_USER, DB_PASS, etc.
-6. Edit the db_sensor_defs var to reflect the device name created earlier and which sensor number
-to associate it with.
-7. Run the wattcher.py script with the '-m' arg to enable logging to the database.
 
-You can also run wattcher.py with '-h' to print out help on the various arguments.
+6. Edit the db_sensor_defs var to reflect the device name created
+earlier and which sensor number to associate it with.
 
-Finally, keep in mind that the data from these devices are horribly innaccurate after passing through the
-xbees. It may have been more accurate with earlier generation models since that's what the originaly project
-was written for but current models will only provide ballpark info, at best. This is an old and pretty much
-dead project from Adafruit so you can't expect much.
+7. Run the wattcher.py script with the '-m' arg to enable logging to
+the database.
+
+You can also run wattcher.py with '-h' to print out help on the
+various arguments.
+
+Finally, keep in mind that the data from these devices are horribly
+innaccurate after passing through the xbees. It may have been more
+accurate with earlier generation models since that's what the
+originaly project was written for but current models will only
+provide ballpark info, at best. This is an old and pretty much dead
+project from Adafruit so you can't expect much.
 
 Cheers,
 Kevin Masaryk
