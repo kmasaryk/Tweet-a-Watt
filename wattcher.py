@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-import serial, time, datetime, sys
+import serial, time, sys
+from datetime import datetime
 from xbee import xbee
 import sensorhistory
 import argparse
 
-# Can also be turned on with passing '-d' to script
+# Can also be turned on by passing '-d' to script
 DEBUG = False
 
 # Logging interval in seconds
@@ -17,7 +18,8 @@ LOGFILE = "powerdatalog.csv"
 # Sensor calibration file
 CALFILE = "calibration"
 
-# the com/serial port the XBee is connected to
+# The com/serial port the XBee is connected to.
+# ttyAMA0 is for an XBee connected to the serial pins on a RPi.
 #SERIALPORT = "/dev/ttyAMA0"
 SERIALPORT = "/dev/ttyUSB0"
 BAUDRATE = 9600
@@ -33,6 +35,15 @@ MAINSVPP = 170 * 2
 
 # conversion to amperes from ADC
 CURRENTNORM = 15.5
+
+# Can also be turned on by passing '-m' to script
+USE_DB = False
+DB_USER = 'power'
+DB_PASS = 'power'
+DB_NAME = 'power'
+DB_HOST = '3jane'
+db_sensor_defs = [{'sensor': 1, 'dev_name': 'stereo'}, 
+                  {'sensor': 2, 'dev_name': 'laptop'}]
 
 # Twitter stuff
 TWITTER = False
@@ -52,7 +63,7 @@ def TwitterIt(u, p, message):
     except UnicodeDecodeError:
         print ("Your message could not be encoded.  Perhaps it " +
                "contains non-ASCII characters? ")
-        print ("Try explicitly specifying the encoding with the  it " +
+        print ("Try explicitly specifying the encoding with the  it "+
                "with the --encoding flag")
     except:
         print "Couldn't connect to Twitter!"
@@ -62,7 +73,7 @@ def TwitterIt(u, p, message):
 def check_twitter():
     # We're going to twitter at midnight, 8am and 4pm
     # Determine the hour of the day (ie 6:42 -> '6')
-    currhour = datetime.datetime.now().hour
+    currhour = datetime.now().hour
     # twitter every 8 hours
     if (((time.time() - twittertimer) >= 3660.0) and
         (currhour % 8 == 0)):
@@ -116,13 +127,60 @@ def calibrate(ser, sensor_num):
     cf.close()
     exit
 
+# Send sensor data to the DB.
+def db_write(sensor, shist):
+    dev_name = ""
+    for d in db_sensor_defs:
+        if sensor == d['sensor']:
+            dev_name = d['dev_name']
+    if dev_name == "":
+        print("**WARNING: sensor could not be matched to a device "
+              "in dictionary. Data will not be logged to the db "
+              "for sensor {}.".format(sensor))
+        return
+
+    dev_id = db_get_dev_id(dev_name)
+    if dev_id == -1:
+        print("**WARNING: device name ({}) for sensor {} doesn't "
+              "match any db devices. Data will not be logged to "
+              "the db for sensor {}".format(dev_name, sensor, sensor))
+        return
+
+    cursor = cnx.cursor()
+
+    insert_stmt = ("INSERT INTO data_collect "
+                   "(sensor_id, device_id, watthr, time) "
+                   "VALUES (%s, %s, %s, %s)")
+    data = (sensor, db_get_dev_id(dev_name), shist.avg_watthr(),
+            datetime.now())
+
+    cursor.execute(insert_stmt, data)
+    cnx.commit()
+    cursor.close()
+
+def db_get_dev_id(dev_name):
+    rv = -1
+    cursor = cnx.cursor()
+
+    query = ("SELECT id, name FROM devices WHERE name=%s")
+    data = (dev_name,)
+
+    cursor.execute(query, data)
+    
+    for (id, name) in cursor:
+        if name == dev_name:
+            rv = id
+
+    cursor.close()
+    return rv
+
 def log_data(sensor, shist):
     now = time.strftime("%Y %m %d, %H:%M")
 
     print("{}, {}, {}\n" .format(now, sensor, shist.avg_watthr()))
 
     log.seek(0, 2)
-    log.write("{}, {}, {}\n" .format(now, sensor, shist.avg_watthr))
+    log.write("{}, {}, {}\n" .format(now, sensor, shist.avg_watthr()))
     log.flush()
 
 # the 'main loop' runs once a second or so.
@@ -237,6 +295,8 @@ def update_graph(shists):
 
     if ((time.time() - shist.timer) >= LOG_INTVL):
         log_data(xb.address_16, shist)
+        if USE_DB:
+            db_write(xb.address_16, shist)
         shist.reset_timer()
         
 
@@ -246,15 +306,26 @@ def update_graph(shists):
 
 # Process command line args
 parser = argparse.ArgumentParser()
-parser.add_argument('-c', dest='sensor_to_cal', action='store',
+parser.add_argument('-c', dest='calibrate', action='store_true',
+                    help="calibrate sensor")
+parser.add_argument('-s', dest='sensor', action='store',
                     metavar="SENSOR#",
-                    help="sensor number to calibrate")
+                    help="sensor number")
 parser.add_argument('-d', dest='DEBUG', action='store_true',
                     help="turn on debugging")
+parser.add_argument('-m', dest='USE_DB', action='store_true',
+                    help="log data to the database")
 args = parser.parse_args()
 
 if args.DEBUG:
     DEBUG = True
+
+if args.USE_DB:
+    USE_DB = True
+
+# DB connection vars
+if USE_DB:
+    import mysql.connector
 
 # open up the serial port to get data transmitted to xbee
 ser = serial.Serial(SERIALPORT, BAUDRATE)
@@ -265,8 +336,11 @@ line = cf.readline()
 vrefcalibration = [int(x) for x in line.split(",")]
 cf.close()
 
-if args.sensor_to_cal != None:
-    calibrate(ser, int(args.sensor_to_cal))
+if args.calibrate:
+    if args.sensor != None:
+        calibrate(ser, int(args.sensor))
+    else:
+        sys.exit("**error: no sensor number provided to calibrate!")
 
 # Open and init datalogging file
 try:
@@ -276,6 +350,11 @@ except IOError:
     log = open(LOGFILE, 'w+')
     log.write("#Date, time, sensornum, avgWatts\n");
     log.flush()
+
+# Connect to the DB
+if USE_DB:
+    cnx = mysql.connector.connect(user = DB_USER, password = DB_PASS,
+                                  host = DB_HOST, database = DB_NAME)
             
 shists = sensorhistory.SensorHistories(log)
 print shists
