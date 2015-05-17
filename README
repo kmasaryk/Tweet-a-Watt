@@ -1,5 +1,7 @@
-# Tweet-a-Watt
-This is fork reflects my own changes to the Tweet-a-Watt project.
+#--------------#
+# Tweet-a-Watt #
+#--------------#
+This fork reflects my own changes to the Tweet-a-Watt project.
 
 I've cleaned up a lot of the original code to make it more legible
 and follow Python (and normal coding) practices. Changes have only
@@ -8,7 +10,14 @@ untouched.
 
 Twitter code was organized better in wattcher.py also but is untested.
 
-DB functionality has also been added so that you can log data from
+You can run wattcher.py with '-h' to print out help on the
+various arguments.
+
+#------------------#
+# Database Logging #
+#------------------#
+
+DB functionality has been added so that you can log data from
 any sensor to a MySQL DB. The power.sql file contains all the SQL
 necessary to create the tables (the DB must already exist). Since
 it's just using mysql.connector module which is part of the Python
@@ -38,13 +47,33 @@ earlier and which sensor number to associate it with.
 7. Run the wattcher.py script with the '-m' arg to enable logging to
 the database.
 
-You can also run wattcher.py with '-h' to print out help on the
-various arguments.
+#-------------------#
+# Web Page Graphing #
+#-------------------#
+
+The files under webpage/ will create a simple webpage that searches
+the DB for entries and creates a graph for each device found which 
+has > 5 data entries.
+
+It uses mysqli to talk to the DB. This is already included in most PHP
+distributions so you shouldn't have to install that.
+
+For the graph creation, it uses pChart (http://www.pchart.net). You'll
+need to download it and put it in your web root somewhere. By default,
+graph.php will look for it under ../pchart/.
+
+Important: you'll need to make sure that the graphs/ dir is owned by
+whatever user your webserver runs as, e.g. 'apache', since this is
+where the graphs (.png files) will all be created.
+
+#----------#
+# Accuracy #
+#----------#
 
 Finally, keep in mind that the data from these devices are horribly
 innaccurate after passing through the xbees. It may have been more
 accurate with earlier generation models since that's what the
-originaly project was written for but current models will only
+original project was written for but current models will only
 provide ballpark info, at best. This is an old and pretty much dead
 project from Adafruit so you can't expect much.
 

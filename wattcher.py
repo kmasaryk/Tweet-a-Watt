@@ -20,8 +20,8 @@ CALFILE = "calibration"
 
 # The com/serial port the XBee is connected to.
 # ttyAMA0 is for an XBee connected to the serial pins on a RPi.
-#SERIALPORT = "/dev/ttyAMA0"
-SERIALPORT = "/dev/ttyUSB0"
+SERIALPORT = "/dev/ttyAMA0"
+#SERIALPORT = "/dev/ttyUSB0"
 BAUDRATE = 9600
 
 # which XBee ADC has current draw data
@@ -105,18 +105,27 @@ def calibrate(ser, sensor_num):
     while(cont):
         packet = xbee.find_packet(ser)
         if packet:
-            cont = False
-            print("Packet found!")
+            xb = xbee(packet)
+            if xb.address_16 == sensor_num:
+                cont = False
+                print("Packet found for sensor {}!"
+                      .format(sensor_num))
+            else:
+                print("Packet found for sensor {}. Still waiting "
+                      "for sensor {} packet..."
+                      .format(xb.address_16, sensor_num))
         else:
             print("Timeout waiting for packet, trying again..")
-
-    xb = xbee(packet)
 
     x = 0
     # Skip the first sample since it's usually messed up.
     for i in range(len(xb.analog_samples) - 1):
         x += xb.analog_samples[i+1][CURRENTSENSE]
     x /= int(len(xb.analog_samples) - 1)
+
+    if x == 0:
+        sys.exit("**ERROR: The calibration value is 0 which means "
+                 "something went wrong. Try the calibration agian.")
 
     print("Calibration value = {}" .format(x))
     vrefcalibration[sensor_num] = x
