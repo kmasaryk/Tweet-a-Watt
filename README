@@ -13,6 +13,16 @@ Twitter code was organized better in wattcher.py also but is untested.
 You can run wattcher.py with '-h' to print out help on the
 various arguments.
 
+#-------------#
+# Calibration #
+#-------------#
+
+A sensor can be calibrated by plugging the Kill-A-Watt into a wall
+outlet with nothing plugged into the KAW itself and then using the
+'-c' arg. For example, to calibrate sensor #2:
+
+$ wattcher.py -c -s 2
+
 #------------------#
 # Database Logging #
 #------------------#
@@ -41,11 +51,10 @@ mysql> INSERT INTO devices (name, description) VALUES ('stereo',
 
 5. Edit the DB_XX vars in wattcher.py, e.g. DB_USER, DB_PASS, etc.
 
-6. Edit the db_sensor_defs var to reflect the device name created
-earlier and which sensor number to associate it with.
+Example runnign wattcher.py and sending data from sensor #1 to the
+DB for a device named 'stereo':
 
-7. Run the wattcher.py script with the '-m' arg to enable logging to
-the database.
+$ wattcher.py -m -s 1 -n 'stereo'
 
 #-------------------#
 # Web Page Graphing #

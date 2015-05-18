@@ -42,8 +42,8 @@ DB_USER = 'power'
 DB_PASS = 'power'
 DB_NAME = 'power'
 DB_HOST = '3jane'
-db_sensor_defs = [{'sensor': 1, 'dev_name': 'stereo'}, 
-                  {'sensor': 2, 'dev_name': 'laptop'}]
+#db_sensor_defs = [{'sensor': 1, 'dev_name': 'stereo'}, 
+#                  {'sensor': 2, 'dev_name': 'laptop'}]
 
 # Twitter stuff
 TWITTER = False
@@ -138,21 +138,12 @@ def calibrate(ser, sensor_num):
 
 # Send sensor data to the DB.
 def db_write(sensor, shist):
-    dev_name = ""
-    for d in db_sensor_defs:
-        if sensor == d['sensor']:
-            dev_name = d['dev_name']
-    if dev_name == "":
-        print("**WARNING: sensor could not be matched to a device "
-              "in dictionary. Data will not be logged to the db "
-              "for sensor {}.".format(sensor))
-        return
-
-    dev_id = db_get_dev_id(dev_name)
+    dev_id = db_get_dev_id(args.dev_name)
     if dev_id == -1:
-        print("**WARNING: device name ({}) for sensor {} doesn't "
+        print("**WARNING: device name '{}' for sensor {} doesn't "
               "match any db devices. Data will not be logged to "
-              "the db for sensor {}".format(dev_name, sensor, sensor))
+              "the db for sensor {}".format(args.dev_name, sensor,
+                                            sensor))
         return
 
     cursor = cnx.cursor()
@@ -160,7 +151,7 @@ def db_write(sensor, shist):
     insert_stmt = ("INSERT INTO data_collect "
                    "(sensor_id, device_id, watthr, time) "
                    "VALUES (%s, %s, %s, %s)")
-    data = (sensor, db_get_dev_id(dev_name), shist.avg_watthr(),
+    data = (sensor, db_get_dev_id(args.dev_name), shist.avg_watthr(),
             datetime.now())
 
     cursor.execute(insert_stmt, data)
@@ -304,7 +295,9 @@ def update_graph(shists):
 
     if ((time.time() - shist.timer) >= LOG_INTVL):
         log_data(xb.address_16, shist)
-        if USE_DB:
+        if USE_DB and xb.address_16 == int(args.sensor):
+            print("Writing sensor {}, device '{}' data to database."
+                  .format(args.sensor, args.dev_name))
             db_write(xb.address_16, shist)
         shist.reset_timer()
         
@@ -324,6 +317,8 @@ parser.add_argument('-d', dest='DEBUG', action='store_true',
                     help="turn on debugging")
 parser.add_argument('-m', dest='USE_DB', action='store_true',
                     help="log data to the database")
+parser.add_argument('-n', dest='dev_name', action='store',
+                    help="device name as it appears in database")
 args = parser.parse_args()
 
 if args.DEBUG:
@@ -362,8 +357,15 @@ except IOError:
 
 # Connect to the DB
 if USE_DB:
-    cnx = mysql.connector.connect(user = DB_USER, password = DB_PASS,
-                                  host = DB_HOST, database = DB_NAME)
+    if args.sensor != None and args.dev_name != None:
+        cnx = mysql.connector.connect(user = DB_USER,
+                                      password = DB_PASS,
+                                      host = DB_HOST,
+                                      database = DB_NAME)
+    else:
+        sys.exit("**error: A sensor number and device name must be "
+                 "provided when logging date to the database.\n"
+                 "Try -h for help.");
             
 shists = sensorhistory.SensorHistories(log)
 print shists
